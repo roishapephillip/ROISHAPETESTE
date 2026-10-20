@@ -179,7 +179,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const requestPasswordReset = async (email: string) => {
     const { error } = await supabase.auth.resetPasswordForEmail(email.trim().toLowerCase(), {
-      redirectTo: window.location.origin,
+      redirectTo: 'https://app.roishape.com.br',
     });
     return { error: error ? friendlyAuthError(error.message) : null };
   };

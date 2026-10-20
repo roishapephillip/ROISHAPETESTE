@@ -1,14 +1,15 @@
 import { useState, type FormEvent } from 'react';
-import { Mail, Lock, User, ArrowRight, Eye, EyeOff, ShieldCheck, Video, Sparkles, MessageCircle } from 'lucide-react';
+import { Mail, Lock, User, ArrowRight, Eye, EyeOff, ShieldCheck, Video, Sparkles, MessageCircle, KeyRound } from 'lucide-react';
 import { BrandLogo } from '@/components/BrandLogo';
 import { useAuth } from '@/context/AuthContext';
+import { supabase } from '@/lib/supabase';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
 
 type Mode = 'login' | 'signup' | 'reset';
 
 const ADMIN_EMAIL = 'fcassessoria13@gmail.com';
-const SUPPORT_WHATSAPP = '5511999999999';
+const SUPPORT_WHATSAPP = '5511983297903';
 
 export function AuthScreen({ forceChangePassword }: { forceChangePassword?: boolean }) {
   const { signIn, signUp, requestPasswordReset, updatePassword, changeFirstPassword, recoveryMode } = useAuth();
@@ -56,9 +57,31 @@ export function AuthScreen({ forceChangePassword }: { forceChangePassword?: bool
           setPassword('');
         }
       } else if (mode === 'reset') {
-        const { error } = await requestPasswordReset(email.trim().toLowerCase());
-        if (error) setError(error);
-        else setSuccess('Enviamos um link de redefinição para seu e-mail.');
+        const identifier = email.trim().toLowerCase();
+        if (identifier.length < 3) {
+          setError('Informe seu e-mail ou WhatsApp.');
+          return;
+        }
+        try {
+          const res = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/reset-password`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              apikey: import.meta.env.VITE_SUPABASE_ANON_KEY,
+            },
+            body: JSON.stringify({ identifier }),
+          });
+          const data = await res.json() as { error?: string; whatsapp_url?: string; management?: boolean; message?: string };
+          if (!res.ok) { setError(data.error ?? 'Não foi possível redefinir a senha.'); return; }
+          if (data.whatsapp_url) {
+            window.open(data.whatsapp_url, '_blank', 'noopener,noreferrer');
+          }
+          setSuccess(data.management
+            ? (data.message ?? 'Abriremos o WhatsApp da equipe para confirmar seus dados.')
+            : 'Senha provisória gerada! Abrimos o WhatsApp com a sua nova senha. Use-a para entrar e troque no primeiro acesso.');
+        } catch {
+          setError('Não foi possível conectar ao servidor. Tente novamente.');
+        }
       } else if (mode === 'login') {
         const { error } = await signIn(email.trim().toLowerCase(), password);
         if (error) setError(error);
@@ -209,15 +232,15 @@ export function AuthScreen({ forceChangePassword }: { forceChangePassword?: bool
             )}
             <Input
               id="email"
-              type="email"
-              label="E-mail"
-              placeholder="seu@email.com"
+              type={mode === 'reset' ? 'text' : 'email'}
+              label={mode === 'reset' ? 'E-mail ou WhatsApp' : 'E-mail'}
+              placeholder={mode === 'reset' ? 'seu@email.com ou (11) 99999-9999' : 'seu@email.com'}
               value={email}
               onChange={(e) => setEmail(e.target.value)}
-              leftIcon={<Mail className="h-4 w-4" />}
+              leftIcon={mode === 'reset' ? <KeyRound className="h-4 w-4" /> : <Mail className="h-4 w-4" />}
               variant="dark"
               required
-              autoComplete="email"
+              autoComplete={mode === 'reset' ? 'off' : 'email'}
             />
             {(recoveryMode || mode !== 'reset') && <Input
               id="password"
@@ -244,8 +267,8 @@ export function AuthScreen({ forceChangePassword }: { forceChangePassword?: bool
 
             {!recoveryMode && mode === 'login' && (
               <div className="-mt-1 flex items-center justify-between gap-3 text-right">
-                <button type="button" onClick={() => { setMode('reset'); setError(null); setSuccess(null); }} className="text-sm font-semibold text-[#00E676] hover:text-[#00C853]">
-                  Redefinir por e-mail
+                <button type="button" onClick={() => { setMode('reset'); setError(null); setSuccess(null); setEmail(''); }} className="text-sm font-semibold text-[#00E676] hover:text-[#00C853]">
+                  Esqueci minha senha
                 </button>
                 <a href={`https://wa.me/${SUPPORT_WHATSAPP}?text=${encodeURIComponent('Olá! Esqueci minha senha do ROI Shape. Pode me ajudar?')}`} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1.5 text-sm font-semibold text-white/50 hover:text-white">
                   <MessageCircle className="h-4 w-4" /> WhatsApp
@@ -253,7 +276,7 @@ export function AuthScreen({ forceChangePassword }: { forceChangePassword?: bool
               </div>
             )}
             {!recoveryMode && mode === 'reset' && <>
-              <p className="text-sm text-white/60">Informe seu e-mail e enviaremos um link seguro para criar uma nova senha.</p>
+              <p className="text-sm text-white/60">Informe seu e-mail ou WhatsApp cadastrado. Geraremos uma senha provisória e abriremos o WhatsApp com ela para você entrar.</p>
               <button type="button" onClick={() => { setMode('login'); setError(null); setSuccess(null); }} className="text-left text-sm font-semibold text-white/60 hover:text-white">Voltar para entrar</button>
             </>}
 
@@ -267,7 +290,7 @@ export function AuthScreen({ forceChangePassword }: { forceChangePassword?: bool
               className="w-full !bg-[#00E676] !text-[#0D0D0D] hover:!bg-[#00C853]"
               rightIcon={<ArrowRight className="h-4 w-4" />}
             >
-              {recoveryMode ? 'Salvar nova senha' : mode === 'login' ? 'Entrar' : mode === 'reset' ? 'Enviar link' : 'Criar conta'}
+              {recoveryMode ? 'Salvar nova senha' : mode === 'login' ? 'Entrar' : mode === 'reset' ? 'Gerar senha via WhatsApp' : 'Criar conta'}
             </Button>
           </form>
           )}

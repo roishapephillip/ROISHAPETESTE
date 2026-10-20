@@ -147,7 +147,7 @@ export function Students() {
     }
   }
 
-  const APP_URL = 'https://roi-shape-ecosystem-f934.bolt.host/';
+  const APP_URL = 'https://app.roishape.com.br';
 
   function buildInviteMessage(name: string, email: string, password: string): string {
     return `Olá ${name}! O seu acesso ao aplicativo ROI Shape (Método Felipe Sarraf) está liberado.\nAcesse: ${APP_URL}\nSeu e-mail: ${email}\nSua senha inicial: ${password}\n\nImportante: ao entrar pela primeira vez, o sistema vai pedir para você criar uma nova senha pessoal.`;
@@ -186,6 +186,37 @@ export function Students() {
       showToast('Senha do aluno atualizada!');
     } catch {
       setError('Não foi possível atualizar o acesso. Tente novamente.');
+    } finally {
+      setResetting(false);
+    }
+  }
+
+  async function quickResetStudent(s: StudentWithCount) {
+    const defaultPassword = '@Roi2026';
+    setResetting(true);
+    setError(null);
+    try {
+      const session = (await supabase.auth.getSession()).data.session;
+      const res = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/create-student`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${session?.access_token}`,
+          apikey: import.meta.env.VITE_SUPABASE_ANON_KEY,
+        },
+        body: JSON.stringify({ action: 'reset_password', student_id: s.id, password: defaultPassword, personal_id: profile?.id }),
+      });
+      const data = await res.json() as { error?: string; email?: string; full_name?: string; phone?: string | null };
+      if (!res.ok || !data.email) { setError(data.error ?? 'Não foi possível resetar a senha.'); return; }
+      const creds = { email: data.email, password: defaultPassword, full_name: data.full_name ?? s.full_name, phone: data.phone ?? s.phone ?? '' };
+      const msg = buildInviteMessage(creds.full_name, creds.email, creds.password);
+      const waUrl = whatsappLink(creds.phone, msg);
+      setCreatedCreds(creds);
+      setCreateOpen(true);
+      showToast('Senha do aluno resetada para @Roi2026! Abrindo WhatsApp...');
+      if (waUrl) window.open(waUrl, '_blank', 'noopener,noreferrer');
+    } catch {
+      setError('Não foi possível conectar ao servidor.');
     } finally {
       setResetting(false);
     }
@@ -330,6 +361,14 @@ export function Students() {
                   className="col-span-2 inline-flex h-9 items-center justify-center gap-1.5 rounded-lg bg-brand-50 px-3 text-xs font-semibold text-brand-700 ring-1 ring-inset ring-brand-200 transition-colors hover:bg-brand-100"
                 >
                   <KeyRound className="h-4 w-4" /> Redefinir senha e enviar acesso
+                </button>
+                <button
+                  type="button"
+                  disabled={resetting}
+                  onClick={() => quickResetStudent(s)}
+                  className="col-span-2 inline-flex h-9 items-center justify-center gap-1.5 rounded-lg bg-amber-50 px-3 text-xs font-semibold text-amber-700 ring-1 ring-inset ring-amber-200 transition-colors hover:bg-amber-100 disabled:opacity-60"
+                >
+                  <KeyRound className="h-4 w-4" /> Reset rápido (senha @Roi2026)
                 </button>
                 <a
                   href={whatsappLink(s.phone ?? '', buildBillingMessage(s))}
