@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Dumbbell, ArrowLeft, Pencil, ListPlus, Trash2, Save, X, Plus, GripVertical, Clock } from 'lucide-react';
+import { Dumbbell, ArrowLeft, ArrowRight, Pencil, ListPlus, Trash2, Save, X, Plus, GripVertical, Clock } from 'lucide-react';
 import { useAuth } from '@/context/AuthContext';
 import { useNav } from '@/context/NavContext';
 import { supabase } from '@/lib/supabase';
@@ -231,6 +231,8 @@ function ExerciseRow({
   const seriesTag = seriesTagFor(item.series_type);
   const bisetRole = bisetRoleFor(item);
   const isBiset = item.series_type === 'Bi-set' && item.biset_group;
+  const isBisetStart = isBiset && bisetRole === '1';
+  const isBisetEnd = isBiset && bisetRole === '2';
 
   if (edit) {
     return (
@@ -300,6 +302,15 @@ function ExerciseRow({
             <p className="mt-0.5 text-lg font-extrabold text-ink-900">{formatRest(item.rest_seconds)}</p>
           </div>
         </div>
+
+        {isBiset && (
+          <div className={`mt-3 flex items-center gap-2 rounded-lg px-3 py-2.5 text-xs font-semibold ${isBisetStart ? 'bg-purple-50 text-purple-700 border border-purple-200' : 'bg-purple-100 text-purple-800 border border-purple-300'}`}>
+            <ArrowRight className="h-4 w-4 shrink-0" />
+            {isBisetStart
+              ? `Executar em sequência sem descanso — vá direto para ${item.biset_group}2 abaixo.`
+              : `Sequência do Bi-set ${item.biset_group} — execute logo após ${item.biset_group}1 acima, sem descanso.`}
+          </div>
+        )}
 
         {(item.technique_notes || item.notes) && (
           <div className="mt-3 flex items-start gap-2 rounded-lg bg-amber-50 border border-amber-100 p-3 text-sm text-amber-800">
