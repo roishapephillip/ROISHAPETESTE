@@ -1,5 +1,5 @@
 import { useEffect, useState, type FormEvent } from 'react';
-import { Users, Search, Plus, MessageCircle, Dumbbell, X, UserPlus, Send, DollarSign, Calendar, Pencil, CheckCircle2 } from 'lucide-react';
+import { Users, Search, Plus, MessageCircle, Dumbbell, X, UserPlus, Send, DollarSign, Calendar, Pencil, CheckCircle2, KeyRound } from 'lucide-react';
 import { useAuth } from '@/context/AuthContext';
 import { useNav } from '@/context/NavContext';
 import { supabase } from '@/lib/supabase';
@@ -57,6 +57,10 @@ export function Students() {
 
   const [form, setForm] = useState({ full_name: '', email: '', phone: '', password: '' });
   const [createdCreds, setCreatedCreds] = useState<{ email: string; password: string; full_name: string; phone: string } | null>(null);
+  const [autoWhatsappUrl, setAutoWhatsappUrl] = useState<string | null>(null);
+  const [resetStudent, setResetStudent] = useState<StudentWithCount | null>(null);
+  const [resetPassword, setResetPassword] = useState('');
+  const [resetting, setResetting] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
 
   function showToast(message: string) {
@@ -95,7 +99,7 @@ export function Students() {
     setError(null);
     if (!profile) return;
     if (form.full_name.trim().length < 2) { setError('Informe o nome completo.'); return; }
-    if (form.password.length < 6) { setError('A senha deve ter ao menos 6 caracteres.'); return; }
+    if (form.password.trim().length < 6) { setError('A senha deve ter ao menos 6 caracteres.'); return; }
     if (!form.email.includes('@')) { setError('E-mail inválido.'); return; }
     if (form.email.trim().toLowerCase() === (profile.email ?? '').toLowerCase()) {
       setError('Você não pode cadastrar um aluno com o seu próprio e-mail. Use um e-mail diferente.');
@@ -103,38 +107,88 @@ export function Students() {
     }
     setCreating(true);
     try {
+      const session = (await supabase.auth.getSession()).data.session;
       const res = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/create-student`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          Authorization: `Bearer ${(await supabase.auth.getSession()).data.session?.access_token}`,
+          Authorization: `Bearer ${session?.access_token}`,
           apikey: import.meta.env.VITE_SUPABASE_ANON_KEY,
         },
         body: JSON.stringify({
           email: form.email.trim(),
-          password: form.password,
+          password: form.password.trim(),
           full_name: form.full_name.trim(),
           phone: form.phone.trim() || null,
           personal_id: profile.id,
         }),
       });
-      const data = await res.json();
-      if (!res.ok) { setError(data.error ?? 'Erro ao criar aluno.'); setCreating(false); return; }
-      setCreatedCreds({ email: form.email.trim(), password: form.password, full_name: form.full_name.trim(), phone: form.phone.trim() });
+      const data = await res.json() as { error?: string; id?: string; email?: string; full_name?: string; phone?: string | null };
+      if (!res.ok || !data.id) {
+        setError(data.error ?? 'Erro ao criar aluno. Tente novamente.');
+        setCreating(false);
+        return;
+      }
+      const creds = { email: data.email ?? form.email.trim().toLowerCase(), password: form.password.trim(), full_name: data.full_name ?? form.full_name.trim(), phone: data.phone ?? form.phone.trim() };
+      const msg = buildInviteMessage(creds.full_name, creds.email, creds.password);
+      const waUrl = whatsappLink(creds.phone, msg);
+      setCreatedCreds(creds);
       setForm({ full_name: '', email: '', phone: '', password: '' });
-      showToast('Aluno cadastrado com sucesso!');
+      showToast('Aluno cadastrado com sucesso e convite gerado!');
       await load();
-    } catch (err) {
-      setError((err as Error).message);
+      if (waUrl) {
+        setAutoWhatsappUrl(waUrl);
+        window.open(waUrl, '_blank', 'noopener,noreferrer');
+      }
+    } catch {
+      setError('Não foi possível conectar ao servidor. Verifique sua internet e tente novamente.');
     } finally {
       setCreating(false);
     }
   }
 
+  const APP_URL = 'https://roi-shape-ecosystem-f934.bolt.host/';
+
+  function buildInviteMessage(name: string, email: string, password: string): string {
+    return `Olá ${name}! O seu acesso ao aplicativo ROI Shape (Método Felipe Sarraf) está liberado.\nAcesse: ${APP_URL}\nSeu e-mail: ${email}\nSua senha inicial: ${password}\n\nImportante: ao entrar pela primeira vez, o sistema vai pedir para você criar uma nova senha pessoal.`;
+  }
+
   function buildAccessMessage(s: StudentWithCount, password?: string) {
     const login = s.email;
     const senha = password ?? '•••••• (definida no cadastro)';
-    return `Olá, ${s.full_name || 'aluno'}! Seu acesso ao ROI Shape está liberado. 🚀\nAcesse: https://app.roishape.com.br\nLogin: ${login}\nSenha: ${senha}`;
+    return `Olá, ${s.full_name || 'aluno'}! Seu acesso ao ROI Shape está liberado.\nAcesse: ${APP_URL}\nLogin: ${login}\nSenha: ${senha}`;
+  }
+
+  async function handleResetPassword(e: FormEvent) {
+    e.preventDefault();
+    if (!profile || !resetStudent) return;
+    const normalizedPassword = resetPassword.trim();
+    if (normalizedPassword.length < 6) { setError('A senha deve ter ao menos 6 caracteres.'); return; }
+    setResetting(true);
+    setError(null);
+    try {
+      const session = (await supabase.auth.getSession()).data.session;
+      const res = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/create-student`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${session?.access_token}`,
+          apikey: import.meta.env.VITE_SUPABASE_ANON_KEY,
+        },
+        body: JSON.stringify({ action: 'reset_password', student_id: resetStudent.id, password: normalizedPassword, personal_id: profile.id }),
+      });
+      const data = await res.json() as { error?: string; email?: string; full_name?: string; phone?: string | null };
+      if (!res.ok || !data.email || !data.full_name) { setError(data.error ?? 'Não foi possível atualizar o acesso.'); return; }
+      setCreatedCreds({ email: data.email, password: normalizedPassword, full_name: data.full_name, phone: data.phone ?? resetStudent.phone ?? '' });
+      setResetStudent(null);
+      setResetPassword('');
+      setCreateOpen(true);
+      showToast('Senha do aluno atualizada!');
+    } catch {
+      setError('Não foi possível atualizar o acesso. Tente novamente.');
+    } finally {
+      setResetting(false);
+    }
   }
 
   function buildBillingMessage(s: StudentWithCount) {
@@ -270,6 +324,13 @@ export function Students() {
                 >
                   <MessageCircle className="h-4 w-4" /> Acesso
                 </a>
+                <button
+                  type="button"
+                  onClick={() => { setResetStudent(s); setResetPassword(''); setError(null); }}
+                  className="col-span-2 inline-flex h-9 items-center justify-center gap-1.5 rounded-lg bg-brand-50 px-3 text-xs font-semibold text-brand-700 ring-1 ring-inset ring-brand-200 transition-colors hover:bg-brand-100"
+                >
+                  <KeyRound className="h-4 w-4" /> Redefinir senha e enviar acesso
+                </button>
                 <a
                   href={whatsappLink(s.phone ?? '', buildBillingMessage(s))}
                   target="_blank"
@@ -288,26 +349,34 @@ export function Students() {
       <Modal
         open={createOpen}
         onClose={() => setCreateOpen(false)}
-        title={createdCreds ? 'Aluno criado com sucesso' : 'Cadastrar novo aluno'}
+        title={createdCreds ? 'Acesso do aluno pronto' : 'Cadastrar novo aluno'}
         description={createdCreds ? 'Envie as credenciais abaixo pelo WhatsApp.' : 'Preencha os dados do aluno. A conta será criada e vinculada a você.'}
       >
         {createdCreds ? (
           <div className="space-y-5">
+            <div className="rounded-xl bg-green-50 border border-green-200 p-4 text-sm text-green-800">
+              <div className="flex items-center gap-2 font-bold">
+                <CheckCircle2 className="h-5 w-5 text-green-600" />
+                Aluno cadastrado com sucesso!
+              </div>
+              <p className="mt-1.5 text-green-700">O convite já foi aberto no WhatsApp. Se não abriu, use o botão abaixo.</p>
+            </div>
             <div className="rounded-xl bg-brand-50 border border-brand-200 p-4 text-sm">
               <p className="font-bold text-brand-800">{createdCreds.full_name}</p>
               <dl className="mt-3 space-y-1.5 text-brand-900">
                 <div className="flex justify-between gap-3"><dt className="text-brand-600">Login</dt><dd className="font-semibold">{createdCreds.email}</dd></div>
-                <div className="flex justify-between gap-3"><dt className="text-brand-600">Senha</dt><dd className="font-semibold">{createdCreds.password}</dd></div>
+                <div className="flex justify-between gap-3"><dt className="text-brand-600">Senha inicial</dt><dd className="font-semibold">{createdCreds.password}</dd></div>
               </dl>
+              <p className="mt-3 rounded-lg bg-brand-100 px-3 py-2 text-xs text-brand-700">No primeiro acesso, o aluno será obrigado a trocar a senha por uma pessoal.</p>
             </div>
             <div className="rounded-xl bg-ink-50 border border-ink-200 p-4">
               <p className="text-xs font-bold uppercase tracking-wide text-ink-500 mb-2">Mensagem do WhatsApp</p>
-              <pre className="whitespace-pre-wrap font-sans text-sm text-ink-700">{buildAccessMessage({ ...createdCreds, id: '', role: 'student', avatar_url: null, assigned_personal_id: null, created_at: '', updated_at: '', payment_status: 'paid', contract_due_date: null, contract_status: 'active' } as StudentWithCount, createdCreds.password)}</pre>
+              <pre className="whitespace-pre-wrap font-sans text-sm text-ink-700">{buildInviteMessage(createdCreds.full_name, createdCreds.email, createdCreds.password)}</pre>
             </div>
             <div className="flex gap-2.5">
               <Button variant="outline" className="flex-1" leftIcon={<X className="h-4 w-4" />} onClick={() => setCreateOpen(false)}>Fechar</Button>
               <a
-                href={whatsappLink(createdCreds.phone, buildAccessMessage({ ...createdCreds, id: '', role: 'student', avatar_url: null, assigned_personal_id: null, created_at: '', updated_at: '', payment_status: 'paid', contract_due_date: null, contract_status: 'active' } as StudentWithCount, createdCreds.password))}
+                href={whatsappLink(createdCreds.phone, buildInviteMessage(createdCreds.full_name, createdCreds.email, createdCreds.password))}
                 target="_blank"
                 rel="noopener noreferrer"
                 className="inline-flex h-11 flex-1 items-center justify-center gap-2 rounded-xl bg-green-600 px-4 text-sm font-semibold text-white transition-colors hover:bg-green-700"
@@ -329,6 +398,30 @@ export function Students() {
             </div>
           </form>
         )}
+      </Modal>
+
+      <Modal
+        open={!!resetStudent}
+        onClose={() => { setResetStudent(null); setError(null); }}
+        title="Redefinir acesso do aluno"
+        description={resetStudent ? `${resetStudent.full_name || resetStudent.email} receberá uma nova senha.` : undefined}
+      >
+        <form onSubmit={handleResetPassword} className="space-y-4">
+          <Input
+            label="Nova senha temporária"
+            type="text"
+            placeholder="Mínimo 6 caracteres"
+            value={resetPassword}
+            onChange={(e) => setResetPassword(e.target.value)}
+            required
+          />
+          <p className="text-sm text-ink-500">Depois de salvar, o app mostrará o login e a senha em uma mensagem pronta para o WhatsApp.</p>
+          {error && <ErrorBanner message={error} />}
+          <div className="flex justify-end gap-2.5 pt-2">
+            <Button type="button" variant="outline" onClick={() => { setResetStudent(null); setError(null); }}>Cancelar</Button>
+            <Button type="submit" leftIcon={<KeyRound className="h-4 w-4" />} loading={resetting}>Atualizar acesso</Button>
+          </div>
+        </form>
       </Modal>
 
       {/* CRM edit modal */}

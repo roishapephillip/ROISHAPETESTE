@@ -5,34 +5,62 @@ import { useAuth } from '@/context/AuthContext';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
 
-type Mode = 'login' | 'signup';
+type Mode = 'login' | 'signup' | 'reset';
 
 const ADMIN_EMAIL = 'fcassessoria13@gmail.com';
 const SUPPORT_WHATSAPP = '5511999999999';
 
-export function AuthScreen() {
-  const { signIn, signUp } = useAuth();
+export function AuthScreen({ forceChangePassword }: { forceChangePassword?: boolean }) {
+  const { signIn, signUp, requestPasswordReset, updatePassword, changeFirstPassword, recoveryMode } = useAuth();
   const [mode, setMode] = useState<Mode>('login');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [newPassword, setNewPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
   const [fullName, setFullName] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
-
+  const [success, setSuccess] = useState<string | null>(null);
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
     setError(null);
+    setSuccess(null);
     setLoading(true);
-    // Safety timeout: if Supabase doesn't respond within 3s, stop loading and show a message.
     const timeoutId = setTimeout(() => {
       setLoading(false);
       setError('O servidor demorou a responder. Verifique sua conexão e tente novamente.');
-    }, 3000);
+    }, 4000);
     try {
-      const trimmedEmail = email.trim().toLowerCase();
-      if (mode === 'login') {
-        const { error } = await signIn(trimmedEmail, password);
+      if (forceChangePassword) {
+        if (newPassword.trim().length < 6) {
+          setError('A nova senha deve ter ao menos 6 caracteres.');
+          return;
+        }
+        if (newPassword !== confirmPassword) {
+          setError('As senhas não coincidem.');
+          return;
+        }
+        const { error } = await changeFirstPassword(newPassword);
+        if (error) setError(error);
+        else setSuccess('Senha atualizada! Liberando acesso...');
+      } else if (recoveryMode) {
+        if (password.length < 6) {
+          setError('A nova senha deve ter ao menos 6 caracteres.');
+          return;
+        }
+        const { error } = await updatePassword(password);
+        if (error) setError(error);
+        else {
+          setSuccess('Senha redefinida com sucesso. Você já pode entrar.');
+          setPassword('');
+        }
+      } else if (mode === 'reset') {
+        const { error } = await requestPasswordReset(email.trim().toLowerCase());
+        if (error) setError(error);
+        else setSuccess('Enviamos um link de redefinição para seu e-mail.');
+      } else if (mode === 'login') {
+        const { error } = await signIn(email.trim().toLowerCase(), password);
         if (error) setError(error);
       } else {
         if (fullName.trim().length < 2) {
@@ -47,7 +75,7 @@ export function AuthScreen() {
           setLoading(false);
           return;
         }
-        const { error } = await signUp(trimmedEmail, password, fullName.trim());
+        const { error } = await signUp(email.trim().toLowerCase(), password, fullName.trim());
         if (error) setError(error);
       }
     } finally {
@@ -57,10 +85,17 @@ export function AuthScreen() {
   };
 
   return (
-    <div className="relative min-h-screen overflow-hidden bg-[#0D0D0D] px-4 py-10 text-white sm:px-6">
+    <div className="relative min-h-screen overflow-hidden bg-[#080B09] px-4 py-10 text-white sm:px-6">
+      <div
+        className="pointer-events-none absolute inset-0 opacity-70"
+        style={{
+          backgroundImage: 'linear-gradient(112deg, transparent 0 18%, rgba(0,230,118,0.25) 18.2%, transparent 18.7% 25%, rgba(0,230,118,0.18) 25.2%, transparent 25.8% 61%, rgba(0,230,118,0.2) 61.2%, transparent 61.8%), linear-gradient(68deg, transparent 0 36%, rgba(0,230,118,0.16) 36.2%, transparent 36.8% 72%, rgba(0,230,118,0.12) 72.2%, transparent 72.8%), radial-gradient(circle at 18% 45%, rgba(0,230,118,0.18), transparent 24%), radial-gradient(circle at 82% 32%, rgba(0,230,118,0.12), transparent 22%)',
+          backgroundSize: '100% 100%',
+        }}
+      />
       {/* technological neon grid backdrop */}
       <div
-        className="pointer-events-none absolute inset-0 opacity-[0.18]"
+        className="pointer-events-none absolute inset-0 opacity-[0.14]"
         style={{
           backgroundImage:
             'linear-gradient(rgba(0,230,118,0.18) 1px, transparent 1px), linear-gradient(90deg, rgba(0,230,118,0.18) 1px, transparent 1px)',
@@ -81,10 +116,10 @@ export function AuthScreen() {
         <p className="mt-2 text-center text-sm text-white/60">O Método de Elite para Personais &amp; Alunos</p>
 
         {/* Toggle tabs */}
-        <div className="mt-8 grid w-full grid-cols-2 gap-1 rounded-xl border border-white/10 bg-[#161616] p-1">
+        {!recoveryMode && !forceChangePassword && <div className="mt-8 grid w-full grid-cols-2 gap-1 rounded-xl border border-white/10 bg-[#161616] p-1">
           <button
             type="button"
-            onClick={() => { setMode('login'); setError(null); }}
+            onClick={() => { setMode('login'); setError(null); setSuccess(null); }}
             className={`rounded-lg py-2.5 text-sm font-bold transition-all ${
               mode === 'login' ? 'bg-[#00E676] text-[#0D0D0D]' : 'text-white/60 hover:text-white'
             }`}
@@ -93,19 +128,73 @@ export function AuthScreen() {
           </button>
           <button
             type="button"
-            onClick={() => { setMode('signup'); setError(null); }}
+            onClick={() => { setMode('signup'); setError(null); setSuccess(null); }}
+            disabled={recoveryMode}
             className={`rounded-lg py-2.5 text-sm font-bold transition-all ${
               mode === 'signup' ? 'bg-[#00E676] text-[#0D0D0D]' : 'text-white/60 hover:text-white'
             }`}
           >
             Criar Conta
           </button>
-        </div>
+        </div>}
 
         {/* Auth container */}
         <div className="mt-5 w-full rounded-2xl border border-white/10 bg-[#161616] p-6 shadow-2xl shadow-black/40 sm:p-8">
-          <form onSubmit={handleSubmit} className="space-y-4">
-            {mode === 'signup' && (
+          {forceChangePassword ? (
+            <form onSubmit={handleSubmit} className="space-y-4">
+              <div className="mb-2 flex items-center gap-2.5 rounded-xl border border-[#00E676]/30 bg-[#00E676]/10 px-4 py-3">
+                <ShieldCheck className="h-5 w-5 shrink-0 text-[#00E676]" />
+                <p className="text-sm font-medium text-white/80">Por segurança, você precisa criar uma nova senha antes de acessar o sistema.</p>
+              </div>
+              <Input
+                id="newPassword"
+                type={showPassword ? 'text' : 'password'}
+                label="Nova senha"
+                placeholder="Mínimo 6 caracteres"
+                value={newPassword}
+                onChange={(e) => setNewPassword(e.target.value)}
+                leftIcon={<Lock className="h-4 w-4" />}
+                rightIcon={
+                  <button
+                    type="button"
+                    onClick={() => setShowPassword((s) => !s)}
+                    className="transition-colors hover:text-[#00E676]"
+                    aria-label={showPassword ? 'Ocultar senha' : 'Mostrar senha'}
+                  >
+                    {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                  </button>
+                }
+                variant="dark"
+                required
+                autoComplete="new-password"
+              />
+              <Input
+                id="confirmPassword"
+                type={showPassword ? 'text' : 'password'}
+                label="Confirmar nova senha"
+                placeholder="Repita a nova senha"
+                value={confirmPassword}
+                onChange={(e) => setConfirmPassword(e.target.value)}
+                leftIcon={<Lock className="h-4 w-4" />}
+                variant="dark"
+                required
+                autoComplete="new-password"
+              />
+              {error && <div className="rounded-xl border border-red-500/30 bg-red-500/10 px-4 py-3 text-sm text-red-300 font-medium">{error}</div>}
+              {success && <div className="rounded-xl border border-[#00E676]/30 bg-[#00E676]/10 px-4 py-3 text-sm font-medium text-[#7dffb0]">{success}</div>}
+              <Button
+                type="submit"
+                size="lg"
+                loading={loading}
+                className="w-full !bg-[#00E676] !text-[#0D0D0D] hover:!bg-[#00C853]"
+                rightIcon={<ArrowRight className="h-4 w-4" />}
+              >
+                Criar nova senha
+              </Button>
+            </form>
+          ) : (
+            <form onSubmit={handleSubmit} className="space-y-4">
+            {!recoveryMode && mode === 'signup' && (
               <Input
                 id="fullName"
                 label="Nome completo"
@@ -130,11 +219,11 @@ export function AuthScreen() {
               required
               autoComplete="email"
             />
-            <Input
+            {(recoveryMode || mode !== 'reset') && <Input
               id="password"
               type={showPassword ? 'text' : 'password'}
-              label="Senha"
-              placeholder={mode === 'signup' ? 'Mínimo 6 caracteres' : '••••••••'}
+              label={recoveryMode ? 'Nova senha' : 'Senha'}
+              placeholder={recoveryMode || mode === 'signup' ? 'Mínimo 6 caracteres' : '••••••••'}
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               leftIcon={<Lock className="h-4 w-4" />}
@@ -150,28 +239,26 @@ export function AuthScreen() {
               }
               variant="dark"
               required
-              autoComplete={mode === 'login' ? 'current-password' : 'new-password'}
-            />
+              autoComplete={recoveryMode || mode === 'signup' ? 'new-password' : 'current-password'}
+            />}
 
-            {mode === 'login' && (
-              <div className="-mt-1 text-right">
-                <a
-                  href={`https://wa.me/${SUPPORT_WHATSAPP}?text=${encodeURIComponent('Olá! Esqueci minha senha do ROI Shape. Pode me ajudar a redefinir?')}`}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="inline-flex items-center gap-1.5 text-sm font-semibold text-[#00E676] hover:text-[#00C853]"
-                >
-                  <MessageCircle className="h-4 w-4" />
-                  Esqueceu a senha? Fale com seu Personal no WhatsApp
+            {!recoveryMode && mode === 'login' && (
+              <div className="-mt-1 flex items-center justify-between gap-3 text-right">
+                <button type="button" onClick={() => { setMode('reset'); setError(null); setSuccess(null); }} className="text-sm font-semibold text-[#00E676] hover:text-[#00C853]">
+                  Redefinir por e-mail
+                </button>
+                <a href={`https://wa.me/${SUPPORT_WHATSAPP}?text=${encodeURIComponent('Olá! Esqueci minha senha do ROI Shape. Pode me ajudar?')}`} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1.5 text-sm font-semibold text-white/50 hover:text-white">
+                  <MessageCircle className="h-4 w-4" /> WhatsApp
                 </a>
               </div>
             )}
+            {!recoveryMode && mode === 'reset' && <>
+              <p className="text-sm text-white/60">Informe seu e-mail e enviaremos um link seguro para criar uma nova senha.</p>
+              <button type="button" onClick={() => { setMode('login'); setError(null); setSuccess(null); }} className="text-left text-sm font-semibold text-white/60 hover:text-white">Voltar para entrar</button>
+            </>}
 
-            {error && (
-              <div className="rounded-xl border border-red-500/30 bg-red-500/10 px-4 py-3 text-sm text-red-300 font-medium">
-                {error}
-              </div>
-            )}
+            {error && <div className="rounded-xl border border-red-500/30 bg-red-500/10 px-4 py-3 text-sm text-red-300 font-medium">{error}</div>}
+            {success && <div className="rounded-xl border border-[#00E676]/30 bg-[#00E676]/10 px-4 py-3 text-sm font-medium text-[#7dffb0]">{success}</div>}
 
             <Button
               type="submit"
@@ -180,9 +267,10 @@ export function AuthScreen() {
               className="w-full !bg-[#00E676] !text-[#0D0D0D] hover:!bg-[#00C853]"
               rightIcon={<ArrowRight className="h-4 w-4" />}
             >
-              {mode === 'login' ? 'Entrar ->' : 'Criar conta ->'}
+              {recoveryMode ? 'Salvar nova senha' : mode === 'login' ? 'Entrar' : mode === 'reset' ? 'Enviar link' : 'Criar conta'}
             </Button>
           </form>
+          )}
 
           <div className="mt-6 flex items-center justify-center gap-4 text-[11px] font-medium uppercase tracking-widest text-white/35">
             <span className="flex items-center gap-1.5"><ShieldCheck className="h-3.5 w-3.5 text-[#00E676]/70" /> Seguro</span>

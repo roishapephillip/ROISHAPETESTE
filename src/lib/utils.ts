@@ -1,21 +1,37 @@
-export function youtubeEmbedUrl(url: string | null | undefined): string | null {
+export function youtubeVideoId(url: string | null | undefined): string | null {
   if (!url) return null;
-  const patterns = [
-    /(?:youtube\.com\/watch\?v=)([\w-]{6,})/,
-    /(?:youtu\.be\/)([\w-]{6,})/,
-    /(?:youtube\.com\/shorts\/)([\w-]{6,})/,
-    /(?:youtube\.com\/embed\/)([\w-]{6,})/,
-  ];
-  for (const p of patterns) {
-    const m = url.match(p);
-    if (m) return `https://www.youtube.com/embed/${m[1]}?rel=0&modestbranding=1`;
+  try {
+    const parsed = new URL(url);
+    if (parsed.hostname === 'youtu.be') return parsed.pathname.slice(1).split('/')[0] || null;
+    if (parsed.hostname.endsWith('youtube.com')) {
+      if (parsed.pathname === '/watch') return parsed.searchParams.get('v');
+      const parts = parsed.pathname.split('/').filter(Boolean);
+      if (parts[0] === 'shorts' || parts[0] === 'embed' || parts[0] === 'live') return parts[1] ?? null;
+    }
+  } catch {
+    return null;
   }
   return null;
 }
 
+export function youtubeEmbedUrl(url: string | null | undefined): string | null {
+  const id = youtubeVideoId(url);
+  return id ? `https://www.youtube.com/embed/${id}?rel=0&modestbranding=1` : null;
+}
+
+export function youtubeThumbnailUrl(url: string | null | undefined): string | null {
+  const id = youtubeVideoId(url);
+  return id ? `https://i.ytimg.com/vi/${id}/hqdefault.jpg` : null;
+}
+
 export function isYoutubeShorts(url: string | null | undefined): boolean {
   if (!url) return false;
-  return /youtube\.com\/shorts\//.test(url);
+  try {
+    const parsed = new URL(url);
+    return parsed.pathname.startsWith('/shorts/');
+  } catch {
+    return false;
+  }
 }
 
 export function formatRest(seconds: number): string {

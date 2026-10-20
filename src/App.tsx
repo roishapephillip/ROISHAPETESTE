@@ -51,10 +51,12 @@ function Router() {
 }
 
 function AppInner() {
-  const { session, loading } = useAuth();
+  const { session, loading, recoveryMode, mustChangePassword } = useAuth();
 
   if (loading) return <LoadingScreen />;
+  if (recoveryMode) return <AuthScreen />;
   if (!session) return <AuthScreen />;
+  if (mustChangePassword) return <AuthScreen forceChangePassword />;
 
   return (
     <NavProvider>

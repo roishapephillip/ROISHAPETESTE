@@ -40,6 +40,7 @@ function buildFallbackProfile(userId: string, email: string): Profile {
     payment_status: 'paid',
     contract_due_date: null,
     contract_status: 'active',
+    must_change_password: false,
   };
 }
 
@@ -49,8 +50,13 @@ interface AuthContextValue {
   profile: Profile | null;
   role: UserRole | null;
   loading: boolean;
+  mustChangePassword: boolean;
   signIn: (email: string, password: string) => Promise<{ error: string | null }>;
   signUp: (email: string, password: string, fullName: string) => Promise<{ error: string | null }>;
+  requestPasswordReset: (email: string) => Promise<{ error: string | null }>;
+  updatePassword: (password: string) => Promise<{ error: string | null }>;
+  changeFirstPassword: (newPassword: string) => Promise<{ error: string | null }>;
+  recoveryMode: boolean;
   signOut: () => Promise<void>;
   refreshProfile: () => Promise<void>;
 }
@@ -61,6 +67,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [session, setSession] = useState<Session | null>(null);
   const [profile, setProfile] = useState<Profile | null>(null);
   const [loading, setLoading] = useState(true);
+  const [recoveryMode, setRecoveryMode] = useState(false);
 
   const ensureAdminRole = async (userId: string, email: string, current: Profile): Promise<Profile> => {
     if (email.toLowerCase() === ADMIN_EMAIL && current.role !== 'admin') {
@@ -116,7 +123,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       }
     }).catch(() => setLoading(false));
 
-    const { data: listener } = supabase.auth.onAuthStateChange((_event, newSession) => {
+    const { data: listener } = supabase.auth.onAuthStateChange((event, newSession) => {
+      if (event === 'PASSWORD_RECOVERY') setRecoveryMode(true);
       setSession(newSession);
       if (newSession) {
         setLoading(false);
@@ -169,6 +177,36 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return { error: null };
   };
 
+  const requestPasswordReset = async (email: string) => {
+    const { error } = await supabase.auth.resetPasswordForEmail(email.trim().toLowerCase(), {
+      redirectTo: window.location.origin,
+    });
+    return { error: error ? friendlyAuthError(error.message) : null };
+  };
+
+  const updatePassword = async (password: string) => {
+    const { error } = await supabase.auth.updateUser({ password });
+    if (!error) {
+      setRecoveryMode(false);
+      await supabase.auth.signOut();
+    }
+    return { error: error ? friendlyAuthError(error.message) : null };
+  };
+
+  const changeFirstPassword = async (newPassword: string) => {
+    if (!session?.user || !profile) return { error: 'Sessão inválida.' };
+    if (newPassword.trim().length < 6) return { error: 'A nova senha deve ter ao menos 6 caracteres.' };
+    const { error: authErr } = await supabase.auth.updateUser({ password: newPassword.trim() });
+    if (authErr) return { error: friendlyAuthError(authErr.message) };
+    const { error: dbErr } = await supabase
+      .from('profiles')
+      .update({ must_change_password: false })
+      .eq('id', profile.id);
+    if (dbErr) return { error: 'Senha atualizada, mas houve um erro ao liberar o acesso. Tente novamente.' };
+    setProfile({ ...profile, must_change_password: false });
+    return { error: null };
+  };
+
   const signOut = async () => {
     await supabase.auth.signOut();
     setProfile(null);
@@ -185,8 +223,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     profile,
     role: profile?.role ?? null,
     loading,
+    mustChangePassword: profile?.must_change_password ?? false,
     signIn,
     signUp,
+    requestPasswordReset,
+    updatePassword,
+    changeFirstPassword,
+    recoveryMode,
     signOut,
     refreshProfile,
   };

@@ -32,6 +32,7 @@ export interface Profile {
   payment_status: PaymentStatus;
   contract_due_date: string | null;
   contract_status: ContractStatus;
+  must_change_password: boolean;
 }
 
 export interface Exercise {

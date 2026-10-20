@@ -10,6 +10,7 @@ import { Modal } from '@/components/ui/Modal';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { VerticalVideoPlayer } from '@/components/ui/VerticalVideoPlayer';
 import type { Exercise, ExerciseCategory, MuscleGroup, Biomechanics } from '@/types';
+import { youtubeThumbnailUrl } from '@/lib/utils';
 
 const MUSCLE_GROUPS: MuscleGroup[] = ['Deltoides', 'Peitoral', 'Dorsais', 'Quadríceps', 'Glúteos', 'Core', 'Bíceps', 'Tríceps', 'Posterior', 'Panturrilha', 'Cardio'];
 const CATEGORIES: ExerciseCategory[] = ['Musculação', 'Funcional', 'Calistenia', 'Mobilidade'];
@@ -34,7 +35,7 @@ const muscleTone: Record<MuscleGroup, 'brand' | 'blue' | 'orange' | 'purple' | '
 
 export function ExerciseLibrary() {
   const { role } = useAuth();
-  const isAdmin = role === 'admin';
+  const canManage = role === 'admin' || role === 'personal';
 
   const [exercises, setExercises] = useState<Exercise[]>([]);
   const [loading, setLoading] = useState(true);
@@ -77,25 +78,25 @@ export function ExerciseLibrary() {
   }
 
   async function saveEdit() {
-    if (!editing.id) return;
+    if (!canManage || !editing.name?.trim()) { setError('Informe o nome do exercício.'); return; }
     setSaving(true);
     setError(null);
-    const { error } = await supabase
-      .from('exercises')
-      .update({
-        name: editing.name,
-        muscle_group: editing.muscle_group,
-        category: editing.category,
-        biomechanics: editing.biomechanics,
-        video_url: editing.video_url,
-        description: editing.description,
-      })
-      .eq('id', editing.id);
+    const payload = {
+      name: editing.name.trim(),
+      muscle_group: editing.muscle_group ?? 'Peitoral',
+      category: editing.category ?? 'Musculação',
+      biomechanics: editing.biomechanics ?? null,
+      video_url: editing.video_url?.trim() || null,
+      description: editing.description?.trim() || null,
+    };
+    const result = editing.id
+      ? await supabase.from('exercises').update(payload).eq('id', editing.id)
+      : await supabase.from('exercises').insert(payload);
     setSaving(false);
-    if (error) { setError(error.message); return; }
+    if (result.error) { setError(result.error.message); return; }
     await load();
     setEditOpen(false);
-    if (selected?.id === editing.id) setSelected({ ...selected, ...editing } as Exercise);
+    setSelected(null);
   }
 
   return (
@@ -103,7 +104,7 @@ export function ExerciseLibrary() {
       <PageHeader
         title="Biblioteca de Exercícios"
         description="Biblioteca global com vídeos verticais do YouTube (canal @roishape). Filtrar por grupo muscular e método biomecânico Fullbody."
-        actions={isAdmin && (
+        actions={canManage && (
           <Button leftIcon={<Plus className="h-4 w-4" />} onClick={() => { setEditing({ name: '', muscle_group: 'Peitoral', category: 'Musculação', biomechanics: null, video_url: '', description: '' }); setEditOpen(true); }}>
             Novo exercício
           </Button>
@@ -166,12 +167,17 @@ export function ExerciseLibrary() {
               onClick={() => setSelected(ex)}
               className="group flex flex-col overflow-hidden rounded-2xl border border-ink-100 bg-white text-left shadow-card transition-all hover:shadow-cardHover hover:border-ink-200"
             >
-              <div className="flex aspect-[9/16] max-h-44 items-center justify-center bg-ink-100 text-ink-300">
-                {ex.video_url ? (
-                  <div className="flex flex-col items-center gap-1.5 text-brand-600">
-                    <Film className="h-7 w-7" />
-                    <span className="text-[11px] font-semibold uppercase tracking-wide">Ver vídeo</span>
-                  </div>
+              <div className="relative flex aspect-[9/16] max-h-44 items-center justify-center overflow-hidden bg-ink-100 text-ink-300">
+                {youtubeThumbnailUrl(ex.video_url) ? (
+                  <>
+                    <img src={youtubeThumbnailUrl(ex.video_url) ?? ''} alt="" className="h-full w-full object-cover" loading="lazy" />
+                    <div className="absolute inset-0 flex items-center justify-center bg-black/25">
+                      <div className="flex flex-col items-center gap-1.5 text-white drop-shadow-md">
+                        <Film className="h-7 w-7" />
+                        <span className="text-[11px] font-semibold uppercase tracking-wide">Ver vídeo</span>
+                      </div>
+                    </div>
+                  </>
                 ) : (
                   <Video className="h-7 w-7" />
                 )}
@@ -179,7 +185,7 @@ export function ExerciseLibrary() {
               <div className="flex flex-1 flex-col gap-2 p-3.5">
                 <div className="flex items-start justify-between gap-2">
                   <h3 className="text-sm font-bold text-ink-900 leading-snug">{ex.name}</h3>
-                  {isAdmin && (
+                  {canManage && (
                     <span
                       onClick={(e) => { e.stopPropagation(); openEdit(ex); }}
                       className="shrink-0 cursor-pointer rounded-lg p-1.5 text-ink-400 opacity-0 transition-opacity hover:bg-ink-100 hover:text-ink-700 group-hover:opacity-100"
@@ -227,7 +233,7 @@ export function ExerciseLibrary() {
                 </a>
               </div>
             )}
-            {isAdmin && (
+            {canManage && (
               <Button className="w-full" leftIcon={<Pencil className="h-4 w-4" />} onClick={() => openEdit(selected)}>
                 Editar Link do Vídeo
               </Button>

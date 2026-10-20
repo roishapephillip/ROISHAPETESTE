@@ -67,7 +67,8 @@ export function WorkoutDetail({ workoutId, editMode }: { workoutId: string; edit
   }
 
   async function removeItem(id: string) {
-    await supabase.from('workout_exercises').delete().eq('id', id);
+    const { error: deleteError } = await supabase.from('workout_exercises').delete().eq('id', id);
+    if (deleteError) { setError(deleteError.message); return; }
     setItems((prev) => prev.filter((i) => i.id !== id));
   }
 
@@ -77,8 +78,8 @@ export function WorkoutDetail({ workoutId, editMode }: { workoutId: string; edit
       .from('workout_exercises')
       .insert({ workout_id: workoutId, exercise_id: ex.id, order_index: orderIndex, sets: 3, reps: '10-12', rest_seconds: 60, series_type: 'Simple', technique_notes: null, biset_group: null })
       .select('id, workout_id, exercise_id, order_index, sets, reps, rest_seconds, series_type, technique_notes, biset_group, notes, created_at, exercise:exercises(*)')
-      .single();
-    if (error) { setError(error.message); return; }
+      .maybeSingle();
+    if (error || !data) { setError(error?.message ?? 'Não foi possível adicionar o exercício.'); return; }
     setItems((prev) => [...prev, data as unknown as WorkoutExercise & { exercise?: Exercise }]);
     setAddOpen(false);
   }
