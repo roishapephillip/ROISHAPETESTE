@@ -16,7 +16,7 @@ export type WorkoutGoal =
   | 'Funcional' | 'Mobilidade' | 'Calistenia';
 
 export type WorkoutStatus = 'active' | 'paused' | 'completed';
-export type SeriesType = 'Simple' | 'Pyramid' | 'Bi-set';
+export type SeriesType = 'Simple' | 'Pyramid' | 'Bi-set' | 'Super-Série' | 'Pirâmide de Carga' | 'Pirâmide Crescente';
 export type EmphasisGroup = 'Membros Inferiores' | 'Membros Superiores' | 'Fullbody';
 
 export interface Profile {

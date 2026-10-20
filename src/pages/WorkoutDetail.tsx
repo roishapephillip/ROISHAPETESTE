@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Dumbbell, ArrowLeft, Pencil, Play, ListPlus, Trash2, Save, X, Plus, GripVertical, Clock } from 'lucide-react';
+import { Dumbbell, ArrowLeft, Pencil, ListPlus, Trash2, Save, X, Plus, GripVertical, Clock } from 'lucide-react';
 import { useAuth } from '@/context/AuthContext';
 import { useNav } from '@/context/NavContext';
 import { supabase } from '@/lib/supabase';
@@ -102,6 +102,8 @@ export function WorkoutDetail({ workoutId, editMode }: { workoutId: string; edit
     return true;
   });
 
+  const groupedBlocks = buildBlocks(items);
+
   return (
     <div className="animate-fade-in">
       <PageHeader
@@ -138,17 +140,30 @@ export function WorkoutDetail({ workoutId, editMode }: { workoutId: string; edit
           action={canEdit && <Button leftIcon={<Plus className="h-4 w-4" />} onClick={() => setAddOpen(true)}>Adicionar exercício</Button>}
         />
       ) : (
-        <div className="space-y-3">
-          {items.map((item, idx) => (
-            <ExerciseRow
-              key={item.id}
-              item={item}
-              index={idx + 1}
-              edit={edit}
-              onSave={saveItem}
-              onRemove={() => removeItem(item.id)}
-              saving={saving}
-            />
+        <div className="space-y-5">
+          {groupedBlocks.map((block) => (
+            <div key={block.key} className="space-y-3">
+              <div className="flex items-center gap-2">
+                <span className={`inline-flex h-6 items-center rounded-full px-3 text-xs font-bold uppercase tracking-wide ${block.tone === 'emphasis' ? 'bg-brand-100 text-brand-800' : 'bg-blue-100 text-blue-800'}`}>
+                  {block.label}
+                </span>
+                <span className="h-px flex-1 bg-ink-100" />
+              </div>
+              {block.items.map((item) => {
+                const globalIdx = items.indexOf(item);
+                return (
+                  <ExerciseRow
+                    key={item.id}
+                    item={item}
+                    index={globalIdx + 1}
+                    edit={edit}
+                    onSave={saveItem}
+                    onRemove={() => removeItem(item.id)}
+                    saving={saving}
+                  />
+                );
+              })}
+            </div>
           ))}
         </div>
       )}
@@ -211,8 +226,11 @@ function ExerciseRow({
   saving: boolean;
 }) {
   const [draft, setDraft] = useState({ sets: item.sets, reps: item.reps, rest_seconds: item.rest_seconds, series_type: item.series_type ?? 'Simple' as SeriesType, technique_notes: item.technique_notes ?? '', biset_group: item.biset_group ?? '', notes: item.notes ?? '' });
-  const [showVideo, setShowVideo] = useState(false);
   const ex = item.exercise;
+
+  const seriesTag = seriesTagFor(item.series_type);
+  const bisetRole = bisetRoleFor(item);
+  const isBiset = item.series_type === 'Bi-set' && item.biset_group;
 
   if (edit) {
     return (
@@ -227,14 +245,18 @@ function ExerciseRow({
         </div>
         <div className="mt-4 grid gap-3 sm:grid-cols-2">
           <Input label="Séries" type="number" min={1} value={draft.sets} onChange={(e) => setDraft({ ...draft, sets: Number(e.target.value) })} />
-          <Input label="Repetições" placeholder="12/10/8/6" value={draft.reps} onChange={(e) => setDraft({ ...draft, reps: e.target.value })} />
+          <Input label="Repetições" placeholder="Ex.: 12/10/8/6 ou 15" value={draft.reps} onChange={(e) => setDraft({ ...draft, reps: e.target.value })} />
           <Input label="Descanso (s)" type="number" min={0} value={draft.rest_seconds} onChange={(e) => setDraft({ ...draft, rest_seconds: Number(e.target.value) })} />
-          <Select label="Tipo de série" value={draft.series_type} onChange={(e) => setDraft({ ...draft, series_type: e.target.value as SeriesType })}>
-            <option value="Simple">Simples</option><option value="Pyramid">Pirâmide</option><option value="Bi-set">Bi-set</option>
+          <Select label="Tipo de Série" value={draft.series_type} onChange={(e) => setDraft({ ...draft, series_type: e.target.value as SeriesType })}>
+            <option value="Simple">Simples</option>
+            <option value="Pirâmide de Carga">Pirâmide de Carga</option>
+            <option value="Pirâmide Crescente">Pirâmide Crescente</option>
+            <option value="Bi-set">Bi-set</option>
+            <option value="Super-Série">Super-Série</option>
           </Select>
           <Input label="Grupo do Bi-set" placeholder="Ex.: A" value={draft.biset_group} onChange={(e) => setDraft({ ...draft, biset_group: e.target.value })} />
         </div>
-        <Textarea label="Observações da técnica / pausa" rows={2} className="mt-3" value={draft.technique_notes} onChange={(e) => setDraft({ ...draft, technique_notes: e.target.value, notes: e.target.value })} />
+        <Textarea label="Observações da técnica / pausa / cadência" rows={2} className="mt-3" placeholder="Ex.: Pausa de 60s entre séries; cadência 2-1-2" value={draft.technique_notes} onChange={(e) => setDraft({ ...draft, technique_notes: e.target.value, notes: e.target.value })} />
         <div className="mt-3 flex justify-end">
           <Button size="sm" leftIcon={<Save className="h-4 w-4" />} loading={saving} onClick={() => onSave({ ...item, ...draft })}>Salvar</Button>
         </div>
@@ -244,60 +266,97 @@ function ExerciseRow({
 
   return (
     <div className="overflow-hidden rounded-2xl border border-ink-100 bg-white shadow-card">
-      <div className="flex flex-col gap-0 sm:flex-row">
-        <div className="flex-1 p-5">
-          <div className="flex items-start gap-3">
-            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-ink-900 text-sm font-bold text-white">{index}</div>
-            <div className="min-w-0 flex-1">
-              <h3 className="text-base font-bold text-ink-900 leading-snug">{ex?.name ?? 'Exercício'}</h3>
-              <div className="mt-1.5 flex flex-wrap gap-1.5">
-                {ex && <Badge tone="brand">{ex.muscle_group}</Badge>}
-                {ex && <Badge tone="gray">{ex.category}</Badge>}
-                <Badge tone={item.series_type === 'Bi-set' ? 'orange' : 'brand'}>{item.series_type === 'Pyramid' ? 'Pirâmide' : item.series_type === 'Bi-set' ? `Bi-set${item.biset_group ? ` ${item.biset_group}` : ''}` : 'Série simples'}</Badge>
-              </div>
+      <div className="p-5">
+        <div className="flex items-start gap-3">
+          <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-ink-900 text-sm font-bold text-white">{index}</div>
+          <div className="min-w-0 flex-1">
+            <h3 className="text-base font-bold text-ink-900 leading-snug">{ex?.name ?? 'Exercício'}</h3>
+            <div className="mt-1.5 flex flex-wrap gap-1.5">
+              {ex && <Badge tone="brand">{ex.muscle_group}</Badge>}
+              {ex && <Badge tone="gray">{ex.category}</Badge>}
+              {seriesTag && <Badge tone={seriesTag.tone as 'green' | 'blue' | 'orange' | 'purple' | 'gray'}>{seriesTag.label}</Badge>}
+              {isBiset && <Badge tone="purple">{item.biset_group}{bisetRole}</Badge>}
             </div>
           </div>
-
-          {showVideo && ex?.video_url && (
-            <div className="mt-4 flex justify-center sm:justify-start">
-              <div className="w-40 sm:w-44"><VerticalVideoPlayer url={ex.video_url} title={ex.name} /></div>
-            </div>
-          )}
-
-          <div className="mt-4 grid grid-cols-3 gap-3">
-            <div className="rounded-xl bg-ink-50 px-3 py-2.5 text-center">
-              <p className="text-[11px] font-bold uppercase tracking-wide text-ink-500">Séries</p>
-              <p className="mt-0.5 text-lg font-extrabold text-ink-900">{item.sets}</p>
-            </div>
-            <div className="rounded-xl bg-ink-50 px-3 py-2.5 text-center">
-              <p className="text-[11px] font-bold uppercase tracking-wide text-ink-500">Reps</p>
-              <p className="mt-0.5 text-lg font-extrabold text-ink-900">{item.reps}</p>
-            </div>
-            <div className="rounded-xl bg-ink-50 px-3 py-2.5 text-center">
-              <p className="text-[11px] font-bold uppercase tracking-wide text-ink-500">Descanso</p>
-              <p className="mt-0.5 text-lg font-extrabold text-ink-900">{formatRest(item.rest_seconds)}</p>
-            </div>
-          </div>
-
-          {(item.technique_notes || item.notes) && (
-            <div className="mt-3 flex items-start gap-2 rounded-lg bg-amber-50 border border-amber-100 p-3 text-sm text-amber-800">
-              <Clock className="h-4 w-4 shrink-0 mt-0.5" />
-              <p>{item.technique_notes || item.notes}</p>
-            </div>
-          )}
-
-          {ex?.video_url && (
-            <button
-              onClick={() => setShowVideo(!showVideo)}
-              className="mt-3 inline-flex items-center gap-1.5 text-sm font-semibold text-brand-700 hover:text-brand-800"
-            >
-              <Play className="h-4 w-4" /> {showVideo ? 'Ocultar vídeo' : 'Ver vídeo do exercício'}
-            </button>
-          )}
         </div>
 
+        {ex?.video_url && (
+          <div className="mt-4 flex justify-center sm:justify-start">
+            <div className="w-40 sm:w-44"><VerticalVideoPlayer url={ex.video_url} title={ex.name} /></div>
+          </div>
+        )}
 
+        <div className="mt-4 grid grid-cols-3 gap-3">
+          <div className="rounded-xl bg-ink-50 px-3 py-2.5 text-center">
+            <p className="text-[11px] font-bold uppercase tracking-wide text-ink-500">Séries</p>
+            <p className="mt-0.5 text-lg font-extrabold text-ink-900">{item.sets}</p>
+          </div>
+          <div className="rounded-xl bg-ink-50 px-3 py-2.5 text-center">
+            <p className="text-[11px] font-bold uppercase tracking-wide text-ink-500">Reps</p>
+            <p className="mt-0.5 text-lg font-extrabold text-ink-900">{item.reps}</p>
+          </div>
+          <div className="rounded-xl bg-ink-50 px-3 py-2.5 text-center">
+            <p className="text-[11px] font-bold uppercase tracking-wide text-ink-500">Descanso</p>
+            <p className="mt-0.5 text-lg font-extrabold text-ink-900">{formatRest(item.rest_seconds)}</p>
+          </div>
+        </div>
+
+        {(item.technique_notes || item.notes) && (
+          <div className="mt-3 flex items-start gap-2 rounded-lg bg-amber-50 border border-amber-100 p-3 text-sm text-amber-800">
+            <Clock className="h-4 w-4 shrink-0 mt-0.5" />
+            <p>{item.technique_notes || item.notes}</p>
+          </div>
+        )}
       </div>
     </div>
   );
+}
+
+type BlockKey = 'emphasis' | 'complement';
+
+interface BlockGroup {
+  key: BlockKey;
+  label: string;
+  tone: BlockKey;
+  items: Array<WorkoutExercise & { exercise?: Exercise }>;
+}
+
+function buildBlocks(items: Array<WorkoutExercise & { exercise?: Exercise }>): BlockGroup[] {
+  const emphasisTypes: SeriesType[] = ['Pirâmide de Carga', 'Pyramid'];
+  const groups: BlockGroup[] = [
+    { key: 'emphasis', label: 'Bloco 1 — Ênfase', tone: 'emphasis', items: [] },
+    { key: 'complement', label: 'Bloco 2 — Complementar', tone: 'complement', items: [] },
+  ];
+  items.forEach((item) => {
+    if (emphasisTypes.includes(item.series_type)) {
+      groups[0].items.push(item);
+    } else {
+      groups[1].items.push(item);
+    }
+  });
+  return groups.filter((g) => g.items.length > 0);
+}
+
+function seriesTagFor(seriesType: SeriesType): { tone: string; label: string } | null {
+  switch (seriesType) {
+    case 'Pirâmide de Carga':
+      return { tone: 'green', label: 'Pirâmide de Carga' };
+    case 'Pirâmide Crescente':
+      return { tone: 'blue', label: 'Pirâmide Crescente' };
+    case 'Pyramid':
+      return { tone: 'green', label: 'Pirâmide' };
+    case 'Bi-set':
+      return { tone: 'orange', label: 'Bi-set' };
+    case 'Super-Série':
+      return { tone: 'purple', label: 'Super-Série' };
+    case 'Simple':
+      return { tone: 'gray', label: 'Série Simples' };
+    default:
+      return { tone: 'gray', label: seriesType };
+  }
+}
+
+function bisetRoleFor(item: WorkoutExercise): string {
+  if (!item.biset_group) return '';
+  return item.order_index % 2 === 0 ? '1' : '2';
 }

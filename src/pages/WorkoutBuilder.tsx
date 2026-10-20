@@ -8,8 +8,8 @@ import { Input, Select, Textarea } from '@/components/ui/Input';
 import { Button } from '@/components/ui/Button';
 import { Badge } from '@/components/ui/Badge';
 import { ErrorBanner } from '@/components/ui/EmptyState';
-import type { Exercise, Profile, WorkoutGoal } from '@/types';
-import { buildRoiLowerBodyRows, type EmphasisGroup } from '@/lib/roiShapeMethod';
+import type { Exercise, Profile, WorkoutGoal, EmphasisGroup } from '@/types';
+import { buildRoiRows, complementLabelFor, emphasisDescription } from '@/lib/roiShapeMethod';
 
 const GOALS: WorkoutGoal[] = ['Hipertrofia', 'Força', 'Definição', 'Emagrecimento', 'Funcional', 'Mobilidade', 'Calistenia'];
 
@@ -42,6 +42,10 @@ export function WorkoutBuilder({ studentId, templateId }: { studentId: string; t
     load();
   }, [studentId, templateId]);
 
+  useEffect(() => {
+    setComplement(complementLabelFor(emphasis));
+  }, [emphasis]);
+
   async function handleSave(e: FormEvent) {
     e.preventDefault();
     if (!profile) return;
@@ -65,21 +69,19 @@ export function WorkoutBuilder({ studentId, templateId }: { studentId: string; t
       .single();
     if (error) { setSaving(false); setError(error.message); return; }
 
-    if (emphasis === 'Membros Inferiores') {
-      const { data: exerciseData, error: exerciseError } = await supabase.from('exercises').select('*');
-      if (exerciseError) {
+    const { data: exerciseData, error: exerciseError } = await supabase.from('exercises').select('*');
+    if (exerciseError) {
+      setSaving(false);
+      setError(exerciseError.message);
+      return;
+    }
+    const rows = buildRoiRows((exerciseData ?? []) as Exercise[], data.id, emphasis);
+    if (rows.length > 0) {
+      const { error: insertError } = await supabase.from('workout_exercises').insert(rows.map(({ exercise: _exercise, ...row }) => row));
+      if (insertError) {
         setSaving(false);
-        setError(exerciseError.message);
+        setError(insertError.message);
         return;
-      }
-      const rows = buildRoiLowerBodyRows((exerciseData ?? []) as Exercise[], data.id);
-      if (rows.length > 0) {
-        const { error: insertError } = await supabase.from('workout_exercises').insert(rows.map(({ exercise: _exercise, ...row }) => row));
-        if (insertError) {
-          setSaving(false);
-          setError(insertError.message);
-          return;
-        }
       }
     }
 
@@ -144,8 +146,8 @@ export function WorkoutBuilder({ studentId, templateId }: { studentId: string; t
           <Input label="Grupo complementar" value={complement} onChange={(e) => setComplement(e.target.value)} placeholder="Ex.: Membros Superiores + Core" />
         </div>
         <div className="rounded-xl border border-brand-200 bg-brand-50 p-4 text-sm text-brand-800">
-          <p className="font-bold">Método ROI Shape ativo</p>
-          <p className="mt-1">Ao escolher Membros Inferiores, a ficha será criada automaticamente com 3 exercícios de força/hipertrofia, 2 complementares e um Bi-set de bíceps + abdominal.</p>
+          <p className="font-bold">Método Fullbody ROI Shape ativo</p>
+          <p className="mt-1">{emphasisDescription(emphasis)}</p>
         </div>
         <Textarea label="Observações (opcional)" rows={3} placeholder="Orientações gerais para o aluno..." value={notes} onChange={(e) => setNotes(e.target.value)} />
         {error && <ErrorBanner message={error} />}
