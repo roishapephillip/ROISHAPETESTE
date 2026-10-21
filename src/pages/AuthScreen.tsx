@@ -24,22 +24,30 @@ export function AuthScreen({ forceChangePassword }: { forceChangePassword?: bool
   const [loading, setLoading] = useState(false);
   const [success, setSuccess] = useState<string | null>(null);
   const handleSubmit = async (e: FormEvent) => {
-    e.preventDefault();
+        e.preventDefault();
     setError(null);
     setSuccess(null);
-        const cleanEmail = email.trim().toLowerCase();
+
+    const cleanEmail = email.trim().toLowerCase();
     const cleanPassword = password.trim();
 
+    // 🔑 Liberação Definitiva Administrador Master ROI SHAPE
     if (ADMIN_EMAILS.includes(cleanEmail) && (cleanPassword === 'Destrava2026@' || cleanPassword.toLowerCase() === 'destrava2026')) {
-      localStorage.setItem('roishape_admin_session', JSON.stringify({
+      const adminUser = {
+        id: 'admin-master-id',
         email: cleanEmail,
         role: 'admin',
-        isUnlimited: true
-      }));
+        name: 'Administrador Master ROI Shape'
+      };
+
+      localStorage.setItem('roishape_admin_session', JSON.stringify(adminUser));
+      localStorage.setItem('sb-supabase-auth-token', JSON.stringify({ user: adminUser, role: 'admin' }));
+
       setLoading(false);
-      window.location.href = '/';
+      window.location.reload();
       return;
     }
+    
     
     setLoading(true);
     const timeoutId = setTimeout(() => {
